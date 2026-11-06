@@ -22,13 +22,14 @@ struct Form {
     int dpi, limit, number, total, completed, selection, change;
     HFONT font, heading;
     const std::vector<Staff>* employees;
+    bool includesDraft;
     Staff employee;
     Draft draft;
     HWND name, sex, age, salary, employeeBox, error, hint;
 
     Form(FormKind type, int scale, HFONT body, HFONT title)
         : kind(type), dpi(scale), limit(0), number(0), total(0), completed(0),
-          selection(-1), change(0), font(body), heading(title), employees(nullptr),
+          selection(-1), change(0), font(body), heading(title), employees(nullptr), includesDraft(false),
           employee(), name(nullptr), sex(nullptr), age(nullptr), salary(nullptr),
           employeeBox(nullptr), error(nullptr), hint(nullptr) {}
 };
@@ -91,6 +92,26 @@ void captureDraft(Form& form)
     form.draft.age=windowText(form.age);
     form.draft.salary=windowText(form.salary);
     form.draft.sex=static_cast<int>(SendMessageW(form.sex,CB_GETCURSEL,0,0));
+}
+
+bool employeeFromDraft(const Draft& draft,Staff& employee,std::wstring& message,int& field)
+{
+    std::wstring name=wintext::trim(draft.name);
+    if(name.empty() || name.size()>40)
+    { message=L"Enter a name of 1-40 characters."; field=ID_NAME; return false; }
+    if(draft.sex<1 || draft.sex>3)
+    { message=L"Choose Male, Female, or Other."; field=ID_SEX; return false; }
+    int age,salary;
+    if(!parseIntegerInRange(wintext::narrow(draft.age),MIN_EMPLOYEE_AGE,MAX_EMPLOYEE_AGE,age))
+    { message=L"Enter an age from 18 to 59."; field=ID_AGE; return false; }
+    if(!parseIntegerInRange(wintext::narrow(draft.salary),0,MAX_MONTHLY_SALARY,salary))
+    { message=L"Enter a monthly salary from 0 to 1,000,000."; field=ID_SALARY; return false; }
+    const char* sexes[]={"","Male","Female","Other"};
+    employee=Staff{wintext::narrow(name),sexes[draft.sex],age,0,salary};
+    std::string validationError;
+    if(!validateNewEmployee(employee,validationError))
+    { message=wintext::widen(validationError); field=ID_NAME; return false; }
+    return true;
 }
 
 void error(Form& form,const std::wstring& message,HWND field)
@@ -223,9 +244,11 @@ void layout(HWND dialog,Form& form)
     else
     {
         heading(dialog,form,L"What would you like to do?");
-        text(dialog,form,L"You have completed "+std::to_wstring(form.completed)+
-            L" employee record(s). You can hire those employees, discard them, or continue entering details.",
-            24,58,width-48,65);
+        std::wstring message=L"You have "+std::to_wstring(form.completed)+
+            (form.completed==1 ? L" completed employee record." : L" completed employee records.");
+        if(form.includesDraft) message+=L" This includes the current form.";
+        message+=L"\nHire them, discard all, or continue editing.";
+        text(dialog,form,message,24,58,width-48,78);
         button(dialog,form,L"Discard all",ID_DISCARD_ALL,24,145,140,false);
         button(dialog,form,L"Continue",ID_CONTINUE,178,145,140,true);
         button(dialog,form,L"Hire completed",ID_KEEP_COMPLETED,332,145,188,false);
@@ -284,19 +307,10 @@ INT_PTR CALLBACK formProcedure(HWND dialog,UINT message,WPARAM wparam,LPARAM lpa
     if(form->kind==EmployeeForm)
     {
         captureDraft(*form);
-        std::wstring name=wintext::trim(form->draft.name);
-        if(name.empty() || name.size()>40) { error(*form,L"Enter a name of 1-40 characters.",form->name); return TRUE; }
-        if(form->draft.sex<1 || form->draft.sex>3) { error(*form,L"Choose Male, Female, or Other.",form->sex); return TRUE; }
-        int age,salary;
-        if(!parseIntegerInRange(wintext::narrow(form->draft.age),MIN_EMPLOYEE_AGE,MAX_EMPLOYEE_AGE,age))
-        { error(*form,L"Enter an age from 18 to 59.",form->age); return TRUE; }
-        if(!parseIntegerInRange(wintext::narrow(form->draft.salary),0,MAX_MONTHLY_SALARY,salary))
-        { error(*form,L"Enter a monthly salary from 0 to 1,000,000.",form->salary); return TRUE; }
-        const char* sexes[]={"","Male","Female","Other"};
-        form->employee=Staff{wintext::narrow(name),sexes[form->draft.sex],age,0,salary};
-        std::string messageText;
-        if(!validateNewEmployee(form->employee,messageText))
-        { error(*form,wintext::widen(messageText),form->name); return TRUE; }
+        std::wstring messageText;
+        int field=0;
+        if(!employeeFromDraft(form->draft,form->employee,messageText,field))
+        { error(*form,messageText,GetDlgItem(dialog,field)); return TRUE; }
         EndDialog(dialog,IDOK);
         return TRUE;
     }
@@ -368,11 +382,18 @@ bool collectHireDetails(int total,int dpi,HFONT font,HFONT heading,std::vector<S
             continue;
         }
         draft=employee.draft;
-        if(pending.empty()) return false;
+        std::vector<Staff> completed=pending;
+        Staff current;
+        std::wstring messageText;
+        int field=0;
+        bool includesDraft=employeeFromDraft(draft,current,messageText,field);
+        if(includesDraft) completed.push_back(current);
+        if(completed.empty()) return false;
         Form partial(PartialForm,dpi,font,heading);
-        partial.completed=static_cast<int>(pending.size());
+        partial.completed=static_cast<int>(completed.size());
+        partial.includesDraft=includesDraft;
         INT_PTR choice=present(partial);
-        if(choice==ID_KEEP_COMPLETED) { employees=pending; return true; }
+        if(choice==ID_KEEP_COMPLETED) { employees=completed; return true; }
         if(choice==ID_DISCARD_ALL || choice==-1) return false;
     }
     employees=pending;

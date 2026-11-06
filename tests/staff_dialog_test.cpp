@@ -142,5 +142,54 @@ int main()
         if(decision==ID_DISCARD_ALL) assert(!accepted && hires.empty());
         if(decision==ID_CONTINUE) assert(accepted && hires.size()==2 && hires[1].name=="Bob");
     }
+
+    // A fully filled current form can also be kept, even before pressing Next.
+    int step=0;
+    std::vector<Staff> currentHire;
+    bool accepted=collectHireDetails(2,96,nullptr,nullptr,currentHire,[&](Form& form) -> INT_PTR {
+        ++step;
+        if(step==1)
+        {
+            assert(form.kind==EmployeeForm);
+            form.draft.name=L"Alice";
+            form.draft.sex=2;
+            form.draft.age=L"25";
+            form.draft.salary=L"5,000";
+            return IDCANCEL;
+        }
+        assert(form.kind==PartialForm && form.completed==1 && form.includesDraft);
+        return ID_KEEP_COMPLETED;
+    });
+    assert(accepted && currentHire.size()==1 && currentHire[0].name=="Alice" && currentHire[0].salary==5000);
+
+    step=0;
+    currentHire.clear();
+    accepted=collectHireDetails(2,96,nullptr,nullptr,currentHire,[&](Form& form) -> INT_PTR {
+        ++step;
+        if(step==1)
+        {
+            form.draft.name=L"Alice";
+            form.draft.sex=2;
+            form.draft.age=L"25";
+            form.draft.salary=L"5,000";
+            return IDCANCEL;
+        }
+        if(step==2)
+        {
+            assert(form.kind==PartialForm && form.completed==1 && form.includesDraft);
+            return ID_CONTINUE;
+        }
+        if(step==3)
+        {
+            assert(form.kind==EmployeeForm && form.number==1 && form.draft.name==L"Alice");
+            form.employee=Staff{"Alice","Female",25,0,5000};
+            return IDOK;
+        }
+        assert(form.kind==EmployeeForm && form.number==2);
+        form.employee=Staff{"Bob","Male",29,0,8000};
+        return IDOK;
+    });
+    assert(accepted && currentHire.size()==2 && currentHire[0].name=="Alice" && currentHire[1].name=="Bob");
+
     DestroyWindow(owner);
 }

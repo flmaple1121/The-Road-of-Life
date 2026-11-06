@@ -25,7 +25,7 @@ Enter a menu number or a requested answer in the message box and press **Enter**
 
 Hiring, dismissing an employee, and changing a salary open separate forms. Choose sex from the list and enter a name (1-40 characters), an age from 18 to 59, and a monthly salary from 0 to 1,000,000. Salary changes can be positive or negative as long as the resulting salary remains within that range. Commas such as `20,000` are accepted in numeric fields. Employee lists show each record separately, including people with the same name.
 
-Each form can be canceled before the change is applied. When canceling a batch hire after completing some records, choose whether to hire the completed employees, discard them, or continue editing. Sorting can also be canceled with option `0`. Progress stays in memory for the current game and is not saved.
+Each form can be canceled before the change is applied. When canceling a batch hire after completing some records, choose whether to hire the completed employees, discard them, or continue editing. A fully filled current form is included, even if Next has not been pressed. Sorting can also be canceled with option `0`. Progress stays in memory for the current game and is not saved.
 
 ## Play in a terminal
 
