@@ -4,6 +4,7 @@
 #include<string>
 #include<iomanip>
 #include<sstream>
+#include<cctype>
 #include"game.h"
 #include"list.h"
 #include"Stack2.h"
@@ -20,7 +21,6 @@ void operator+=(List& a,int b)
 }
 void check(int, float *);
 string readToken();
-int readInteger();
 void choose(Role *);
 void company(int );
 void school(Role *);
@@ -36,11 +36,13 @@ static bool first_work=true;
 static bool staff_initialized=false;
 static List staff;
 static GameObserver* game_observer=nullptr;
+static StaffForms* staff_forms=nullptr;
 struct InputClosed {};
 
-int runGame(GameObserver* observer)
+int runGame(GameObserver* observer, StaffForms* forms)
 {
     game_observer=observer;
+    staff_forms=forms;
     study_time=0;
     first_work=true;
     staff_initialized=false;
@@ -101,29 +103,71 @@ string readToken()
         return token;
     throw InputClosed();
 }
-int readInteger()
+bool parseIntegerInRange(const string& text, int minimum, int maximum, int& value)
 {
-    while(true)
+    const string whitespace=" \t\r\n";
+    size_t first=text.find_first_not_of(whitespace);
+    if(first==string::npos) return false;
+    size_t last=text.find_last_not_of(whitespace);
+    string input=text.substr(first,last-first+1);
+    string normalized;
+    size_t pos=0;
+    if(input[pos]=='+' || input[pos]=='-') normalized+=input[pos++];
+    if(pos==input.size()) return false;
+    int group=0;
+    bool comma=false;
+    for(;pos<input.size();++pos)
     {
-        istringstream input(readToken());
-        int value;
-        char extra;
-        if((input>>value) && !(input>>extra))
-            return value;
-        cout<<"Please enter a whole number: ";
+        unsigned char c=static_cast<unsigned char>(input[pos]);
+        if(c>='0' && c<='9') { normalized+=static_cast<char>(c); ++group; }
+        else if(c==',')
+        {
+            if(group==0 || (!comma && group>3) || (comma && group!=3)) return false;
+            comma=true;
+            group=0;
+        }
+        else return false;
     }
+    if(group==0 || (comma && group!=3)) return false;
+    istringstream stream(normalized);
+    long long parsed;
+    char extra;
+    if(!(stream>>parsed) || (stream>>extra) || parsed<minimum || parsed>maximum) return false;
+    value=static_cast<int>(parsed);
+    return true;
+}
+static bool validName(const string& name)
+{
+    if(name.find_first_not_of(" \t\r\n")==string::npos || name.find_first_of("\r\n\t")!=string::npos)
+        return false;
+    size_t characters=0;
+    for(size_t i=0;i<name.size();++i)
+        if((static_cast<unsigned char>(name[i]) & 0xc0)!=0x80) ++characters;
+    return characters<=40;
+}
+bool validateNewEmployee(const Staff& employee, string& error)
+{
+    if(!validName(employee.name)) error="Enter a name of 1-40 characters.";
+    else if(employee.sex!="Male" && employee.sex!="Female" && employee.sex!="Other")
+        error="Choose Male, Female, or Other.";
+    else if(employee.age<MIN_EMPLOYEE_AGE || employee.age>MAX_EMPLOYEE_AGE)
+        error="Age must be between 18 and 59.";
+    else if(employee.salary<0 || employee.salary>MAX_MONTHLY_SALARY)
+        error="Monthly salary must be between 0 and 1,000,000.";
+    else { error.clear(); return true; }
+    return false;
 }
 void check(int n,float *choice)
 {
     while(true)
     {
-        int value=readInteger();
-        if(value>=1 && value<=n)
+        int value;
+        if(parseIntegerInRange(readToken(),1,n,value))
         {
             *choice=(float)value;
             return;
         }
-        cout<<"That choice isn't available. Please try again."<<endl;
+        cout<<"Please enter a whole number from 1 to "<<n<<"."<<endl;
     }
 }
 void school(Role *q)
@@ -522,6 +566,114 @@ void choose(Role *q)
             break;
     }
 }
+
+// The terminal accepts either separate answers or comma-separated fields.
+static string readFormToken()
+{
+    string token=readToken();
+    if(!token.empty() && token[token.size()-1]==',') token.erase(token.size()-1);
+    return token;
+}
+static bool isCancel(const string& token)
+{
+    string lower=token;
+    for(size_t i=0;i<lower.size();++i)
+        lower[i]=static_cast<char>(tolower(static_cast<unsigned char>(lower[i])));
+    return lower=="cancel";
+}
+static bool readFormNumber(int minimum,int maximum,int& value,bool zeroCancels=false)
+{
+    while(true)
+    {
+        string token=readFormToken();
+        if(isCancel(token) || (zeroCancels && token=="0")) return false;
+        if(parseIntegerInRange(token,minimum,maximum,value)) return true;
+        cout<<"Please enter a whole number from "<<minimum<<" to "<<maximum
+            <<", or type cancel."<<endl;
+    }
+}
+static bool confirmConsoleAction()
+{
+    cout<<"1. Confirm  0. Cancel"<<endl;
+    int answer;
+    return readFormNumber(1,1,answer,true);
+}
+static int choosePartialHires(const vector<Staff>& employees)
+{
+    if(employees.empty()) return 2;
+    cout<<"You have completed "<<employees.size()<<" employee record(s)."<<endl
+        <<"1. Hire the completed employees"<<endl
+        <<"2. Discard them and cancel"<<endl
+        <<"3. Continue entering details"<<endl;
+    int choice;
+    if(!readFormNumber(1,3,choice)) return 2;
+    return choice;
+}
+static bool consoleEmployee(int number,int count,Staff& item)
+{
+    item.worktime=0;
+    cout<<"Employee "<<number<<" of "<<count<<" - name (1-40 characters): ";
+    while(true)
+    {
+        item.name=readFormToken();
+        if(isCancel(item.name)) return false;
+        if(validName(item.name)) break;
+        cout<<"Enter a name of 1-40 characters, or type cancel: ";
+    }
+    cout<<"Sex (1. Male  2. Female  3. Other): ";
+    while(true)
+    {
+        string sex=readFormToken();
+        if(isCancel(sex)) return false;
+        for(size_t j=0;j<sex.size();++j)
+            sex[j]=static_cast<char>(tolower(static_cast<unsigned char>(sex[j])));
+        if(sex=="1" || sex=="male") { item.sex="Male"; break; }
+        if(sex=="2" || sex=="female") { item.sex="Female"; break; }
+        if(sex=="3" || sex=="other") { item.sex="Other"; break; }
+        cout<<"Choose Male, Female, or Other, or type cancel: ";
+    }
+    cout<<"Age (18-59): ";
+    if(!readFormNumber(MIN_EMPLOYEE_AGE,MAX_EMPLOYEE_AGE,item.age)) return false;
+    cout<<"Monthly salary (0-1,000,000): ";
+    return readFormNumber(0,MAX_MONTHLY_SALARY,item.salary);
+}
+static bool consoleHire(int limit,vector<Staff>& employees)
+{
+    cout<<"How many employees would you like to hire (1-"<<limit<<", 0 to cancel)? ";
+    int count;
+    if(!readFormNumber(1,limit,count,true)) return false;
+    cout<<"Enter each employee's name, sex, age, and monthly salary. "
+        <<"Separate fields with spaces, or commas followed by spaces. Type cancel at any prompt."<<endl;
+    for(int i=0;i<count;)
+    {
+        Staff item;
+        if(consoleEmployee(i+1,count,item)) { employees.push_back(item); ++i; continue; }
+        int choice=choosePartialHires(employees);
+        if(choice==1) return true;
+        if(choice==2) { employees.clear(); return false; }
+    }
+    while(true)
+    {
+        cout<<"Confirm hiring "<<count<<(count==1 ? " employee?" : " employees?")<<endl;
+        if(confirmConsoleAction()) return true;
+        int choice=choosePartialHires(employees);
+        if(choice==1) return true;
+        if(choice==2) { employees.clear(); return false; }
+    }
+}
+static bool consoleSelectEmployee(const vector<Staff>& employees,int& index)
+{
+    cout<<"Enter the employee's name, or type cancel: ";
+    while(true)
+    {
+        string name=readFormToken();
+        if(isCancel(name)) return false;
+        for(size_t i=0;i<employees.size();++i)
+            if(employees[i].name==name) { index=static_cast<int>(i); return true; }
+        cout<<"I couldn't find that employee. Try again, or type cancel: ";
+    }
+}
+
 void company(int worktime)
 {
     // Keep the same staff between work periods, and reset them for a new game.
@@ -543,15 +695,10 @@ void company(int worktime)
         if(item.age>=60)
         {
             cout<<item.name<<" has reached retirement age and left the company."<<endl;
-            DeleteList(staff,item,0);
+            DeleteList(staff,item,i);
         }
         else
             ++i;
-    }
-    if(EmptyList(staff))
-    {
-       cout<<"The company has no employees. Let's hire someone."<<endl;
-       *testnum=1;
     }
     switch((int)*testnum)
     {
@@ -563,62 +710,102 @@ void company(int worktime)
                     break;
                 }
                 int maxHire=available<5 ? available : 5;
-                cout<<"How many employees would you like to hire (1-"<<maxHire<<")? ";
-                check(maxHire,testnum);
-                int count=(int)*testnum;
-                cout<<"Enter each new employee's details:"<<endl
-                    <<"Name  Sex  Age  Monthly salary"<<endl;
-                for(int i=0;i<count;i++)
+                vector<Staff> pending;
+                bool confirmed=staff_forms ? staff_forms->hire(maxHire,pending) : consoleHire(maxHire,pending);
+                if(!confirmed)
                 {
-                cout<<"Employee "<<i+1<<" of "<<count<<" (name, sex, age, monthly salary): ";
-                item.name=readToken();
-                item.sex=readToken();
-                item.age=readInteger();
-                item.salary=readInteger();
-                item.worktime=0;
-                InsertList(staff,item,-1,0);
-                }break; }
-        case 2: TraverseList(staff);
-                cerr<<"Who would you like to dismiss? Enter their name: ";
-                item.name=readToken();
-                while(!FindList(staff,item))
-                {
-                    cout<<"I couldn't find that employee. Please try again."<<endl;
-                    item.name=readToken();
+                    cout<<"Hiring canceled. No employees were hired."<<endl;
+                    break;
                 }
-                if(item.worktime>=10)
+                string error;
+                bool valid=!pending.empty() && pending.size()<=static_cast<size_t>(maxHire);
+                for(size_t i=0;i<pending.size() && valid;++i)
+                    valid=validateNewEmployee(pending[i],error);
+                if(!valid)
                 {
-                  cout<<item.name<<" has years of experience. Are you sure you want to dismiss them?"
-                      <<endl<<"1. Dismiss"<<endl
-                      <<"2. Keep"<<endl;
-                  check(2,testnum);
-                  if(*testnum==2) break;
+                    cout<<"No employees were hired: "<<(error.empty() ? "invalid number of records." : error)<<endl;
+                    break;
                 }
-                DeleteList(staff,item,0);
+                cout<<"Hired "<<pending.size()<<(pending.size()==1 ? " employee:" : " employees:")<<endl;
+                for(size_t i=0;i<pending.size();++i)
+                {
+                    pending[i].worktime=0;
+                    InsertList(staff,pending[i],-1,0);
+                    cout<<pending[i]<<endl;
+                }
                 break;
+        }
+        case 2: {
+                if(EmptyList(staff)) { cout<<"There are no employees to dismiss."<<endl; break; }
+                vector<Staff> employees(staff.list,staff.list+staff.size);
+                int index=-1;
+                bool confirmed;
+                if(staff_forms) confirmed=staff_forms->dismiss(employees,index);
+                else
+                {
+                    TraverseList(staff);
+                    confirmed=consoleSelectEmployee(employees,index);
+                    if(confirmed)
+                    {
+                        cout<<"Dismiss "<<employees[index].name<<"?"<<endl;
+                        confirmed=confirmConsoleAction();
+                    }
+                }
+                if(!confirmed) { cout<<"Dismissal canceled. No employee was dismissed."<<endl; break; }
+                if(index<0 || index>=staff.size) { cout<<"Invalid employee selection."<<endl; break; }
+                item=staff.list[index];
+                DeleteList(staff,item,index+1);
+                cout<<item.name<<" has been dismissed."<<endl;
+                break;
+        }
         case 3: TraverseList(staff);break;
-        case 4: cout<<"How would you like to sort the staff list?"<<endl
-                    <<"1. Age  2. Years of service  3. Monthly salary"<<endl;
-                check(3,testnum);
-                SortList(staff,(int)*testnum);
-                TraverseList(staff);break;
-        case 5: TraverseList(staff);
-                int extra;
-                cerr<<"Whose salary would you like to change? Enter their name: ";
-                item.name=readToken();
-                while(!FindList(staff,item))
-                {
-                    cout<<"I couldn't find that employee. Please try again."<<endl;
-                    item.name=readToken();
-                }
-                cerr<<"How much should their monthly salary change? ";
-                extra=readInteger();
-                item.salary+=extra;
-                UpdateList(staff,item);
-                if(extra>0)  cout<<"Salary increased."<<endl<<item<<endl;
-                else if(extra==0)  cout<<"The salary is unchanged."<<endl<<item<<endl;
-                else   cout<<"Salary decreased."<<endl<<item<<endl;
+        case 4: {
+                cout<<"How would you like to sort the staff list?"<<endl
+                    <<"1. Age  2. Years of service  3. Monthly salary  0. Cancel"<<endl;
+                int choice;
+                if(!readFormNumber(1,3,choice,true)) { cout<<"Sorting canceled."<<endl; break; }
+                SortList(staff,choice);
+                TraverseList(staff);
                 break;
+        }
+        case 5: {
+                if(EmptyList(staff)) { cout<<"There are no employees whose salary can be changed."<<endl; break; }
+                vector<Staff> employees(staff.list,staff.list+staff.size);
+                int index=-1,change=0;
+                bool confirmed;
+                if(staff_forms) confirmed=staff_forms->salaryChange(employees,index,change);
+                else
+                {
+                    TraverseList(staff);
+                    confirmed=consoleSelectEmployee(employees,index);
+                    if(confirmed)
+                    {
+                        cout<<"Salary change ("<<-employees[index].salary<<" to "
+                            <<MAX_MONTHLY_SALARY-employees[index].salary<<", or cancel): ";
+                        confirmed=readFormNumber(-employees[index].salary,
+                            MAX_MONTHLY_SALARY-employees[index].salary,change);
+                    }
+                    if(confirmed)
+                    {
+                        cout<<"Apply this salary change?"<<endl;
+                        confirmed=confirmConsoleAction();
+                    }
+                }
+                if(!confirmed) { cout<<"Salary change canceled."<<endl; break; }
+                if(index<0 || index>=staff.size ||
+                    static_cast<long long>(staff.list[index].salary)+change<0 ||
+                    static_cast<long long>(staff.list[index].salary)+change>MAX_MONTHLY_SALARY)
+                {
+                    cout<<"Invalid employee or salary change; no salary was changed."<<endl;
+                    break;
+                }
+                staff.list[index].salary+=change;
+                item=staff.list[index];
+                if(change>0) cout<<"Salary increased."<<endl<<item<<endl;
+                else if(change==0) cout<<"The salary is unchanged."<<endl<<item<<endl;
+                else cout<<"Salary decreased."<<endl<<item<<endl;
+                break;
+        }
         case 6: staff+=worktime;break;
     }
 }

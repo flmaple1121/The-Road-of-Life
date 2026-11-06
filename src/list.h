@@ -2,16 +2,9 @@
 #include<stdlib.h>
 #include<string>
 #include<iomanip>
+#include"game.h"
 using namespace std;
 #define MaxSize 30
-struct Staff
-{
-    string name;
-    string sex;
-    int age;
-    int worktime;
-    int salary;
-};
 typedef Staff ElemType;
 struct  List{
     ElemType list[MaxSize];

@@ -23,7 +23,9 @@ Alternatively, open `build\The Road of Life - Chat.exe` from File Explorer after
 
 Enter a menu number or a requested answer in the message box and press **Enter** or **Send**. Scroll the conversation to revisit earlier messages. Your character's age, wisdom, wealth, and experience appear at the top and update as the story progresses. After ending a journey, select **New game** to start again.
 
-When hiring, enter each employee's name, sex, age, and monthly salary separated by spaces; names must be a single word. Employee actions select the first record with the entered name. Progress stays in memory for the current game and is not saved.
+Hiring, dismissing an employee, and changing a salary open separate forms. Choose sex from the list and enter a name (1-40 characters), an age from 18 to 59, and a monthly salary from 0 to 1,000,000. Salary changes can be positive or negative as long as the resulting salary remains within that range. Commas such as `20,000` are accepted in numeric fields. Employee lists show each record separately, including people with the same name.
+
+Each form can be canceled before the change is applied. When canceling a batch hire after completing some records, choose whether to hire the completed employees, discard them, or continue editing. Sorting can also be canceled with option `0`. Progress stays in memory for the current game and is not saved.
 
 ## Play in a terminal
 
@@ -33,7 +35,7 @@ The chat interface and the terminal version share the same C++ game logic. To bu
 g++ -std=c++11 -Wall -Wextra -pedantic "src/The Road of Life.cpp" -o road-of-life
 ```
 
-Run `./road-of-life` on macOS or Linux, or `.\road-of-life.exe` in Windows PowerShell. The terminal version does not require the Windows chat interface.
+Run `./road-of-life` on macOS or Linux, or `.\road-of-life.exe` in Windows PowerShell. The terminal version does not require the Windows chat interface. In the terminal, enter employee fields individually or together with spaces or comma-and-space separators; names are single words. Type `cancel` at a field prompt to return without applying that operation, and confirm changes when prompted.
 
 ## Features
 
@@ -52,7 +54,7 @@ With Python 3 and `g++` available, run:
 python -m unittest discover -s tests -v
 ```
 
-The tests exercise gameplay, input validation, status updates, restarting, and the staff limit. On Windows, they also exercise the chat interface's message bridge and shutdown while waiting for input.
+The tests exercise gameplay, field validation, cancellation and partial batch hiring, status updates, restarting, and the staff limit. On Windows, they also check the staff forms, chat message bridge, and shutdown while waiting for input.
 
 ## Project layout
 

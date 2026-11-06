@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <deque>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <streambuf>
 #include <string>
@@ -20,6 +21,8 @@
 #include <vector>
 
 #include "game.h"
+#include "staff_dialog_win32.h"
+#include "win_text.h"
 
 namespace {
 
@@ -45,37 +48,26 @@ LRESULT CALLBACK inputProcedure(HWND target, UINT message, WPARAM wparam, LPARAM
 }
 
 int px(int value) { return MulDiv(value, dpi, 96); }
+using wintext::narrow;
+using wintext::trim;
+using wintext::widen;
 
-std::wstring widen(const std::string& text)
-{
-    if (text.empty()) return std::wstring();
-    int count = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
-    std::wstring result(count, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &result[0], count);
-    return result;
-}
-
-std::string narrow(const std::wstring& text)
-{
-    if (text.empty()) return std::string();
-    int count = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
-    std::string result(count, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &result[0], count, nullptr, nullptr);
-    return result;
-}
-
-std::wstring trim(const std::wstring& value)
-{
-    const std::wstring whitespace = L" \t\r\n";
-    const std::wstring::size_type first = value.find_first_not_of(whitespace);
-    if (first == std::wstring::npos) return std::wstring();
-    return value.substr(first, value.find_last_not_of(whitespace) - first + 1);
-}
+struct FormRequest {
+    enum Action { Hire, Dismiss, Salary } action;
+    int limit, index, change;
+    std::vector<Staff> employees, hires;
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool completed, accepted;
+    explicit FormRequest(Action value) : action(value), limit(0), index(-1), change(0),
+        completed(false), accepted(false) {}
+};
 
 struct Event {
-    enum Kind { Text, Status, Clear, Ready, Finished } kind;
+    enum Kind { Text, Status, Clear, Ready, Finished, Form } kind;
     std::string text;
     Role role;
+    std::shared_ptr<FormRequest> form;
     explicit Event(Kind value) : kind(value), role() {}
 };
 
@@ -202,9 +194,9 @@ struct Message {
     std::wstring text;
 };
 
-class ChatApp : public GameObserver {
+class ChatApp : public GameObserver, public StaffForms {
 public:
-    ChatApp() : output(bridge), input(bridge, output), window(nullptr), chat(nullptr),
+    ChatApp() : output(bridge), input(bridge, output), stopping(false), window(nullptr), chat(nullptr),
         edit(nullptr), send(nullptr), newGame(nullptr), role(), hasRole(false), finished(false),
         scroll(0), contentHeight(0), bodyFont(nullptr), smallFont(nullptr),
         boldFont(nullptr), titleFont(nullptr), valueFont(nullptr) {}
@@ -222,6 +214,11 @@ public:
     int measureMessages(HDC dc, int width, bool draw);
     void drawButton(const DRAWITEMSTRUCT& item);
     void addMessage(bool fromPlayer, const std::wstring& text);
+    bool requestForm(const std::shared_ptr<FormRequest>& request);
+    void showForm(const std::shared_ptr<FormRequest>& request);
+    bool hire(int limit, std::vector<Staff>& employees) override;
+    bool dismiss(const std::vector<Staff>& employees, int& index) override;
+    bool salaryChange(const std::vector<Staff>& employees, int& index, int& change) override;
 
     void statusChanged(const Role& value) override
     {
@@ -236,6 +233,9 @@ public:
     GameOutput output;
     GameInput input;
     std::thread worker;
+    std::mutex formMutex;
+    std::shared_ptr<FormRequest> activeForm;
+    bool stopping;
     HWND window, chat, edit, send, newGame;
     Role role;
     bool hasRole, finished;
@@ -312,6 +312,11 @@ void ChatApp::initialize(HWND hwnd)
 void ChatApp::startGame()
 {
     if (worker.joinable()) worker.join();
+    {
+        std::lock_guard<std::mutex> lock(formMutex);
+        stopping = false;
+        activeForm.reset();
+    }
     input.reset();
     output.reset();
     messages.clear();
@@ -329,7 +334,7 @@ void ChatApp::startGame()
         std::streambuf* oldOut = std::cout.rdbuf(&output);
         std::streambuf* oldErr = std::cerr.rdbuf(&output);
         std::cin.clear();
-        runGame(this);
+        runGame(this, this);
         output.publish();
         std::cin.rdbuf(oldIn);
         std::cout.rdbuf(oldOut);
@@ -341,7 +346,101 @@ void ChatApp::startGame()
 void ChatApp::stopGame()
 {
     input.close();
+    std::shared_ptr<FormRequest> request;
+    {
+        std::lock_guard<std::mutex> lock(formMutex);
+        stopping = true;
+        request = activeForm;
+    }
+    if (request) {
+        {
+            std::lock_guard<std::mutex> lock(request->mutex);
+            if (!request->completed) {
+                request->accepted = false;
+                request->completed = true;
+            }
+        }
+        request->ready.notify_one();
+    }
     if (worker.joinable()) worker.join();
+}
+
+bool ChatApp::requestForm(const std::shared_ptr<FormRequest>& request)
+{
+    {
+        std::lock_guard<std::mutex> lock(formMutex);
+        if (stopping) return false;
+        activeForm = request;
+    }
+    output.publish();
+    Event event(Event::Form);
+    event.form = request;
+    bridge.post(event);
+    std::unique_lock<std::mutex> lock(request->mutex);
+    request->ready.wait(lock, [&request] { return request->completed; });
+    bool accepted = request->accepted;
+    lock.unlock();
+    {
+        std::lock_guard<std::mutex> stateLock(formMutex);
+        if (activeForm == request) activeForm.reset();
+    }
+    return accepted;
+}
+
+bool ChatApp::hire(int limit, std::vector<Staff>& employees)
+{
+    std::shared_ptr<FormRequest> request = std::make_shared<FormRequest>(FormRequest::Hire);
+    request->limit = limit;
+    if (!requestForm(request)) return false;
+    employees = request->hires;
+    return true;
+}
+
+bool ChatApp::dismiss(const std::vector<Staff>& employees, int& index)
+{
+    std::shared_ptr<FormRequest> request = std::make_shared<FormRequest>(FormRequest::Dismiss);
+    request->employees = employees;
+    if (!requestForm(request)) return false;
+    index = request->index;
+    return true;
+}
+
+bool ChatApp::salaryChange(const std::vector<Staff>& employees, int& index, int& change)
+{
+    std::shared_ptr<FormRequest> request = std::make_shared<FormRequest>(FormRequest::Salary);
+    request->employees = employees;
+    if (!requestForm(request)) return false;
+    index = request->index;
+    change = request->change;
+    return true;
+}
+
+void ChatApp::showForm(const std::shared_ptr<FormRequest>& request)
+{
+    {
+        std::lock_guard<std::mutex> lock(request->mutex);
+        if (request->completed) return;
+    }
+    bool accepted = false;
+    int index = -1, change = 0;
+    std::vector<Staff> hires;
+    if (request->action == FormRequest::Hire)
+        accepted = showHireForm(window, dpi, bodyFont, boldFont, request->limit, hires);
+    else if (request->action == FormRequest::Dismiss)
+        accepted = showDismissForm(window, dpi, bodyFont, boldFont, request->employees, index);
+    else
+        accepted = showSalaryForm(window, dpi, bodyFont, boldFont, request->employees, index, change);
+    {
+        std::lock_guard<std::mutex> lock(request->mutex);
+        if (!request->completed) {
+            request->accepted = accepted;
+            request->hires.swap(hires);
+            request->index = index;
+            request->change = change;
+            request->completed = true;
+        }
+    }
+    request->ready.notify_one();
 }
 
 void ChatApp::submit()
@@ -375,6 +474,8 @@ void ChatApp::processEvents()
             EnableWindow(edit, TRUE);
             EnableWindow(send, TRUE);
             SetFocus(edit);
+        } else if (it->kind == Event::Form) {
+            showForm(it->form);
         } else if (it->kind == Event::Finished) {
             finished = true;
             EnableWindow(edit, FALSE);

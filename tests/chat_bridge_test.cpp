@@ -94,4 +94,43 @@ int main()
     assert(forwardedCharacters == 0);
     assert(inputProcedure(nullptr, WM_CHAR, L'7', 0) == 42);
     assert(forwardedCharacters == 1);
+
+    // A form request travels to the window thread and returns completed data.
+    ChatApp formApp;
+    std::vector<Staff> hires;
+    bool accepted=false;
+    std::thread requester([&] { accepted=formApp.hire(5,hires); });
+    std::shared_ptr<FormRequest> request;
+    for(int attempt=0;attempt<2000 && !request;++attempt)
+    {
+        std::deque<Event> next=formApp.bridge.take();
+        for(const Event& event : next) if(event.kind==Event::Form) request=event.form;
+        if(!request) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    assert(request && request->action==FormRequest::Hire && request->limit==5);
+    {
+        std::lock_guard<std::mutex> lock(request->mutex);
+        request->hires.push_back(Staff{"Alice","Female",25,0,5000});
+        request->accepted=true;
+        request->completed=true;
+    }
+    request->ready.notify_one();
+    requester.join();
+    assert(accepted && hires.size()==1 && hires[0].name=="Alice");
+
+    // Closing the app while a form is pending must unblock the game thread.
+    ChatApp closingApp;
+    bool closingAccepted=true;
+    std::thread pending([&] { std::vector<Staff> values; closingAccepted=closingApp.hire(5,values); });
+    request.reset();
+    for(int attempt=0;attempt<2000 && !request;++attempt)
+    {
+        std::deque<Event> next=closingApp.bridge.take();
+        for(const Event& event : next) if(event.kind==Event::Form) request=event.form;
+        if(!request) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    assert(request);
+    closingApp.stopGame();
+    pending.join();
+    assert(!closingAccepted);
 }

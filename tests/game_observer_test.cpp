@@ -31,7 +31,7 @@ std::string play(const std::string& choices, Observer& observer)
 int main()
 {
     Observer first;
-    std::string output = play("1\n2\n1\n1\n2\n1\n1\n1\nTemp Male 24 2000\n6\n4\n", first);
+    std::string output = play("1\n2\n1\n1\n2\n1\n1\n1\nTemp Male 24 2000\n1\n6\n4\n", first);
     assert(output.find("complete your bachelor's degree") != std::string::npos);
     assert(output.find("1 year of work:") != std::string::npos);
     assert(first.statuses.size() == 3);
