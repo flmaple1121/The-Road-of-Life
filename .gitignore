@@ -1,0 +1,13 @@
+# Compiled programs and intermediate files
+*.exe
+*.o
+*.obj
+*.gch
+/road-of-life
+
+# Generated Dev-C++ files and local editor state
+*.layout
+Makefile.win
+
+# Python test cache
+__pycache__/

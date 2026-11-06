@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Keep the original GBK/CRLF files byte-for-byte unchanged in Git.
+/original/*.cpp -text !eol
+/original/*.h -text !eol
+/original/*.dev -text !eol
