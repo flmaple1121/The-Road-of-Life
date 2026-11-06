@@ -28,7 +28,7 @@ void assistant();
 void attribute(Role *);
 void study(Role *);
 int work(Role *);
-void ability(Role *);
+void displayConsoleStatus(Role *);
 float *testnum;
 // Study progresses from no degree (0) to bachelor's (4) to postgraduate (9).
 int study_time=0;
@@ -66,10 +66,10 @@ int runGame(GameObserver* observer)
     while(1)
     {
         cout<<"Choose an action:"<<endl<<"1. Study"<<endl
-        <<"2. Work"<<endl<<"3. View your attributes"<<endl
-        <<"4. Clear the conversation"<<endl<<"5. End your journey" <<endl;
-        check(5,testnum);
-        if(*testnum==5)
+        <<"2. Work"<<endl<<"3. Clear the conversation"<<endl
+        <<"4. End your journey" <<endl;
+        check(4,testnum);
+        if(*testnum==4)
         {
             cout<<"Your journey has come to an end."<<endl
                 <<"Name: "<<q->name<<"  Sex: "<<q->sex
@@ -80,6 +80,7 @@ int runGame(GameObserver* observer)
             break;
         }
         choose(q);
+        if(!game_observer) displayConsoleStatus(q);
     }
     } catch(const InputClosed&) {
         cout<<endl<<"Input closed. Goodbye."<<endl;
@@ -496,7 +497,7 @@ int work(Role *q)
     if(game_observer) game_observer->statusChanged(*q);
     return 0;
 }
-void ability(Role *q)
+void displayConsoleStatus(Role *q)
 {
     cout<<"Age: "<<q->age<<"  Wisdom: "<<q->wisdom
         <<endl<<"Wealth: "<<q->wealth<<"  Experience: "
@@ -508,8 +509,7 @@ void choose(Role *q)
     {
         case 1:study(q);break;
         case 2:work(q);break;
-        case 3:ability(q);break;
-        case 4:
+        case 3:
             if(game_observer)
                 game_observer->clearConversation();
             else {

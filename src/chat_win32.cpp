@@ -36,6 +36,9 @@ LRESULT CALLBACK inputProcedure(HWND target, UINT message, WPARAM wparam, LPARAM
         SendMessageW(GetParent(target), WM_COMMAND, MAKEWPARAM(ID_SEND, BN_CLICKED), 0);
         return 0;
     }
+    // TranslateMessage also posts a character for Enter; an edit control beeps
+    // if that character reaches its default handler in a single-line field.
+    if (message == WM_CHAR && (wparam == L'\r' || wparam == L'\n')) return 0;
     if (message == WM_MOUSEWHEEL)
         return SendMessageW(GetParent(target), message, wparam, lparam);
     return CallWindowProcW(oldInputProc, target, message, wparam, lparam);

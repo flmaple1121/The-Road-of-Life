@@ -16,6 +16,13 @@ struct Observer : GameObserver {
     void clearConversation() override { bridge.post(Event(Event::Clear)); }
 };
 
+int forwardedCharacters = 0;
+LRESULT CALLBACK originalInput(HWND, UINT, WPARAM, LPARAM)
+{
+    ++forwardedCharacters;
+    return 42;
+}
+
 void play(GameInput& input, GameOutput& output, Observer& observer)
 {
     std::streambuf* oldIn = std::cin.rdbuf(&input);
@@ -35,7 +42,7 @@ int main()
     GameOutput output(bridge);
     GameInput input(bridge, output);
     Observer observer(bridge);
-    const char* lines[] = {"1", "1", "1", "2", "1", "6", "5"};
+    const char* lines[] = {"1", "1", "1", "2", "1", "6", "4"};
     std::thread game([&] { play(input, output, observer); });
     std::deque<Event> events;
     for (const char* line : lines) {
@@ -65,6 +72,9 @@ int main()
     assert((ages == std::vector<int>{18, 22, 23}));
     assert(conversation.find("Welcome to The Road of Life!") != std::string::npos);
     assert(conversation.find("Game over.") != std::string::npos);
+    assert(conversation.find("View your attributes") == std::string::npos);
+    assert(conversation.find("3. Clear the conversation") != std::string::npos);
+    assert(conversation.find("4. End your journey") != std::string::npos);
 
     input.reset();
     output.reset();
@@ -76,4 +86,12 @@ int main()
     for (const Event& event : events)
         if (event.kind == Event::Text && event.text.find("Input closed.") != std::string::npos) closed = true;
     assert(closed);
+
+    // Enter's character message must not reach the single-line edit control.
+    oldInputProc = originalInput;
+    assert(inputProcedure(nullptr, WM_CHAR, L'\r', 0) == 0);
+    assert(inputProcedure(nullptr, WM_CHAR, L'\n', 0) == 0);
+    assert(forwardedCharacters == 0);
+    assert(inputProcedure(nullptr, WM_CHAR, L'7', 0) == 42);
+    assert(forwardedCharacters == 1);
 }
