@@ -19,11 +19,8 @@ struct  List{
 };
 ostream &operator<<(ostream &out, ElemType& a)
 {
-    out<<setw(12)<<setiosflags(ios::left)<<a.name
-    <<setw(8)<<setiosflags(ios::left)<<a.sex
-    <<setw(8)<<setiosflags(ios::left)<<a.age
-    <<setw(8)<<setiosflags(ios::left)<<a.worktime
-    <<setw(8)<<setiosflags(ios::left)<<a.salary;
+    out<<a.name<<" | "<<a.sex<<" | "<<a.age
+       <<" | "<<a.worktime<<" | "<<a.salary;
     return out;
 }
 istream &operator>>(istream& in, ElemType& a)
@@ -57,18 +54,14 @@ ElemType GetList(List &a,int pos)
 {
     if(pos<1||pos>a.size)
     {
-        cout<<"pos is out range!"<<endl;
+        cout<<"That position is outside the staff list."<<endl;
         exit(1);
     }
     return a.list[pos-1];
 }
 void TraverseList(List &a)
 {
-    cout<<setw(12)<<setiosflags(ios::left)<<"Name"
-        <<setw(8)<<setiosflags(ios::left)<<"Sex"
-        <<setw(8)<<setiosflags(ios::left)<<"Age"
-        <<setw(8)<<setiosflags(ios::left)<<"Years"
-        <<setw(8)<<setiosflags(ios::left)<<"Salary"<<endl;
+    cout<<"Name | Sex | Age | Years at company | Monthly salary"<<endl;
     for(int i=0;i<a.size;i++)
         cout<<a.list[i]<<endl;
     cout<<endl;

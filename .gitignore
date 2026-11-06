@@ -4,6 +4,7 @@
 *.obj
 *.gch
 /road-of-life
+/build/
 
 # Generated Dev-C++ files and local editor state
 *.layout

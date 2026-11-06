@@ -4,20 +4,12 @@
 #include<string>
 #include<iomanip>
 #include<sstream>
+#include"game.h"
 #include"list.h"
 #include"Stack2.h"
 #include"LinkQueue.h"
 #define N 10
 using namespace std;
-struct Role
-{
-    string name;
-    string sex;
-    int age;
-    int wisdom;
-    int wealth;
-    int experience;
-};
 void operator+=(List& a,int b)
 {
     for(int i=0;i<a.size;i++)
@@ -40,8 +32,18 @@ void ability(Role *);
 float *testnum;
 // Study progresses from no degree (0) to bachelor's (4) to postgraduate (9).
 int study_time=0;
-int main()
+static bool first_work=true;
+static bool staff_initialized=false;
+static List staff;
+static GameObserver* game_observer=nullptr;
+struct InputClosed {};
+
+int runGame(GameObserver* observer)
 {
+    game_observer=observer;
+    study_time=0;
+    first_work=true;
+    staff_initialized=false;
     srand((unsigned)time(0));
     float test;
     testnum=&test;
@@ -50,12 +52,13 @@ int main()
                 {"Yuyao","Female",18,120,90,20}};
     Role *q;
     q=r;
-    cout<<"Choose a character to begin your journey through life!"<<endl;
+    try {
+    cout<<"Welcome to The Road of Life! Who would you like to play as?"<<endl;
     for(int i=0;i<3;i++,q++)
-        cout<<i+1<<"."<<q->name<<" ";
-    cout<<endl;
+        cout<<i+1<<". "<<q->name<<endl;
     check(3,testnum);
     q=r+(int)*testnum-1;
+    if(game_observer) game_observer->statusChanged(*q);
     cout<<"Name: "<<q->name<<"  Sex: "<<q->sex
         <<"  Age: "<<q->age<<endl<<"Wisdom: "
         <<q->wisdom<<"  Wealth: "<<q->wealth
@@ -64,30 +67,38 @@ int main()
     {
         cout<<"Choose an action:"<<endl<<"1. Study"<<endl
         <<"2. Work"<<endl<<"3. View your attributes"<<endl
-        <<"4. Clear the screen"<<endl<<"5. End this life" <<endl;
+        <<"4. Clear the conversation"<<endl<<"5. End your journey" <<endl;
         check(5,testnum);
         if(*testnum==5)
         {
-            cout<<"Your journey ends here."<<endl
+            cout<<"Your journey has come to an end."<<endl
                 <<"Name: "<<q->name<<"  Sex: "<<q->sex
                 <<"  Age: "<<q->age<<endl<<"Wisdom: "
                 <<q->wisdom<<"  Wealth: "<<q->wealth
                 <<"  Experience: "<<q->experience<<endl
-                <<"Game over.";
+                <<"Game over."<<endl;
             break;
         }
         choose(q);
     }
+    } catch(const InputClosed&) {
+        cout<<endl<<"Input closed. Goodbye."<<endl;
+    }
     return 0;
 }
+#ifndef ROAD_OF_LIFE_GUI
+int main()
+{
+    return runGame();
+}
+#endif
 // Read tokens so malformed input can be retried and EOF ends the game cleanly.
 string readToken()
 {
     string token;
     if(cin>>token)
         return token;
-    cout<<endl<<"Input closed. Goodbye."<<endl;
-    exit(0);
+    throw InputClosed();
 }
 int readInteger()
 {
@@ -111,7 +122,7 @@ void check(int n,float *choice)
             *choice=(float)value;
             return;
         }
-        cout<<"Invalid choice. Please try again."<<endl;
+        cout<<"That choice isn't available. Please try again."<<endl;
     }
 }
 void school(Role *q)
@@ -147,7 +158,7 @@ void school(Role *q)
     {
         if(q->name=="Chenxi")
         {
-            cout<<"Your wisdom earns you a place on a combined postgraduate program."<<endl;
+            cout<<"Your academic strengths have opened the door to a combined master's and PhD program."<<endl;
             cout<<"Choose a university for your master's and doctoral degrees:"<<endl
                 <<"1. University of Cambridge"<<endl
                 <<"2. University of Oxford"<<endl
@@ -156,7 +167,7 @@ void school(Role *q)
         }
         else if(q->name=="Haochen")
         {
-            cout<<"Your wealth earns you a place on a combined postgraduate program."<<endl;
+            cout<<"With your finances, a combined master's and PhD program is within reach."<<endl;
             cout<<"Choose a university for your master's and doctoral degrees:"<<endl
                 <<"1. Stanford University"<<endl
                 <<"2. KTH Royal Institute of Technology"<<endl
@@ -165,7 +176,7 @@ void school(Role *q)
         }
         else
         {
-            cout<<"Your good looks earn you a place on a combined postgraduate program."<<endl;
+            cout<<"A combined master's and PhD program is now within reach."<<endl;
             cout<<"Choose a university for your master's and doctoral degrees:"<<endl
                 <<"1. Peking University"<<endl
                 <<"2. Tsinghua University"<<endl
@@ -188,8 +199,8 @@ void assistant()
         Push(waiting,student1[i]);
     for(int i=0;i<5;i++)
         Push(sudden,student2[i]);
-    cout<<"You are a teaching assistant. Help your supervisor grade the homework!"<<endl
-        <<"1. Grade individually  "<<"2. Grade all automatically"<<endl;
+    cout<<"You've become a teaching assistant. Your supervisor needs a hand grading homework."<<endl
+        <<"1. Grade each submission"<<endl<<"2. Grade them all automatically"<<endl;
     check(2,testnum);
     bool automatic=(*testnum==2);
     // Pending submissions use a stack; graded names and marks leave in FIFO order.
@@ -198,12 +209,13 @@ void assistant()
         if(!automatic && rand()%N<=3 && sudden!=NULL)
         {
             Push(waiting,Pop(sudden));
-            cout<<Peek(waiting)<<" submitted their homework!"<<endl;
+            cout<<Peek(waiting)<<" has just handed in their homework."<<endl;
         }
         if(!automatic)
         {
-            cout<<Peek(waiting)<<"'s homework grade:"<<endl
-                <<"1. Excellent  2. Good  3. Pass  4. Fail  5. Grade remaining automatically"<<endl;
+            cout<<"How would you grade "<<Peek(waiting)<<"'s homework?"<<endl
+                <<"1. Excellent  2. Good  3. Pass  4. Fail"<<endl
+                <<"5. Grade the rest automatically"<<endl;
             check(5,testnum);
             automatic=(*testnum==5);
         }
@@ -213,14 +225,13 @@ void assistant()
         EnQueue(finished,grades[num-1]);
     }
     ClearStack(sudden);
-    cout<<"All homework has been graded!"<<endl<<"Homework results:"<<endl
-        <<setw(16)<<setiosflags(ios::left)<<"Name"
-        <<"Grade"<<endl;
+    cout<<"That's all the homework marked. Here are the results:"<<endl<<"Homework results:"<<endl
+        <<"Name | Grade"<<endl;
     while(!EmptyQueue(finished))
     {
         Elem name=OutQueue(finished);
         Elem grade=OutQueue(finished);
-        cout<<setw(16)<<setiosflags(ios::left)<<name<<grade<<endl;
+        cout<<name<<" | "<<grade<<endl;
     }
 }
 void attribute(Role *q)
@@ -231,7 +242,7 @@ void attribute(Role *q)
         {
           if(rand()%N<=3)
           {
-            cout<<"You completed four years of bachelor's studies and met a great teacher!"<<endl
+            cout<<"After four years, you've earned your bachelor's degree and met a wonderful teacher along the way."<<endl
                 <<"Wisdom +50, experience +20, wealth -20."<<endl<<endl;
             q->wisdom+=50;
             q->experience+=20;
@@ -239,7 +250,7 @@ void attribute(Role *q)
           }
           else
           {
-            cout<<"You completed four years of bachelor's studies."<<endl
+            cout<<"After four years, you've earned your bachelor's degree."<<endl
                 <<"Wisdom +30, experience +10, wealth -40."<<endl<<endl;
             q->wisdom+=30;
             q->experience+=10;
@@ -250,7 +261,7 @@ void attribute(Role *q)
         {
             if(rand()%N<=1&&*testnum>=3)
             {
-            cout<<"You completed four years of bachelor's studies and met a great teacher!"<<endl
+            cout<<"After four years, you've earned your bachelor's degree and met a wonderful teacher along the way."<<endl
                 <<"Wisdom +40, experience +30, wealth -100."<<endl<<endl;
             q->wisdom+=40;
             q->experience+=30;
@@ -258,7 +269,7 @@ void attribute(Role *q)
             }
             else if(*testnum<=2)
             {
-            cout<<"You completed four years of bachelor's studies."<<endl
+            cout<<"After four years, you've earned your bachelor's degree."<<endl
                 <<"Wisdom +20, experience +10, wealth -40."<<endl<<endl;
             q->wisdom+=20;
             q->experience+=10;
@@ -266,7 +277,7 @@ void attribute(Role *q)
             }
             else
             {
-            cout<<"You completed four years of bachelor's studies."<<endl
+            cout<<"After four years, you've earned your bachelor's degree."<<endl
                 <<"Wisdom +20, experience +15, wealth -100."<<endl<<endl;
             q->wisdom+=20;
             q->experience+=15;
@@ -277,7 +288,7 @@ void attribute(Role *q)
         {
             if(rand()%N<=2)
             {
-            cout<<"You completed four years of bachelor's studies and met a great teacher!"<<endl
+            cout<<"After four years, you've earned your bachelor's degree and met a wonderful teacher along the way."<<endl
                 <<"Wisdom +45, experience +20, wealth -20."<<endl<<endl;
             q->wisdom+=45;
             q->experience+=20;
@@ -285,7 +296,7 @@ void attribute(Role *q)
             }
             else
             {
-            cout<<"You completed four years of bachelor's studies."<<endl
+            cout<<"After four years, you've earned your bachelor's degree."<<endl
                 <<"Wisdom +25, experience +10, wealth -40."<<endl<<endl;
             q->wisdom+=25;
             q->experience+=10;
@@ -301,16 +312,16 @@ void attribute(Role *q)
         {
             if(rand()%N<=3)
             {
-            cout<<"You completed five years of postgraduate studies and met a great supervisor!"<<endl
-                <<"Wisdom +60, experience +30, wealth set to 0."<<endl<<endl;
+            cout<<"After five years, you've completed your postgraduate studies with the help of a great supervisor."<<endl
+                <<"Wisdom +60, experience +30, wealth is now 0."<<endl<<endl;
             q->wisdom+=60;
             q->experience+=30;
             q->wealth=0;
             }
             else
             {
-            cout<<"You completed five years of postgraduate studies."<<endl
-                <<"Wisdom +40, experience +20, wealth set to 0."<<endl<<endl;
+            cout<<"After five years, you've completed your postgraduate studies."<<endl
+                <<"Wisdom +40, experience +20, wealth is now 0."<<endl<<endl;
             q->wisdom+=40;
             q->experience+=20;
             q->wealth=0;
@@ -320,16 +331,16 @@ void attribute(Role *q)
         {
             if(rand()%N<=1)
             {
-            cout<<"You completed five years of postgraduate studies and met a great supervisor!"<<endl
-                <<"Wisdom +60, experience +30, wealth set to 20."<<endl<<endl;
+            cout<<"After five years, you've completed your postgraduate studies with the help of a great supervisor."<<endl
+                <<"Wisdom +60, experience +30, wealth is now 20."<<endl<<endl;
             q->wisdom+=60;
             q->experience+=30;
             q->wealth=20;
             }
             else
             {
-            cout<<"You completed five years of postgraduate studies."<<endl
-                <<"Wisdom +40, experience +20, wealth set to 20."<<endl<<endl;
+            cout<<"After five years, you've completed your postgraduate studies."<<endl
+                <<"Wisdom +40, experience +20, wealth is now 20."<<endl<<endl;
             q->wisdom+=40;
             q->experience+=20;
             q->wealth=20;
@@ -339,16 +350,16 @@ void attribute(Role *q)
         {
             if(rand()%N<=2)
             {
-            cout<<"You completed five years of postgraduate studies and met a great supervisor!"<<endl
-                <<"Wisdom +55, experience +30, wealth set to 10."<<endl<<endl;
+            cout<<"After five years, you've completed your postgraduate studies with the help of a great supervisor."<<endl
+                <<"Wisdom +55, experience +30, wealth is now 10."<<endl<<endl;
             q->wisdom+=55;
             q->experience+=30;
             q->wealth=10;
             }
             else
             {
-            cout<<"You completed five years of postgraduate studies."<<endl
-                <<"Wisdom +35, experience +20, wealth set to 10."<<endl<<endl;
+            cout<<"After five years, you've completed your postgraduate studies."<<endl
+                <<"Wisdom +35, experience +20, wealth is now 10."<<endl<<endl;
             q->wisdom+=35;
             q->experience+=20;
             q->wealth=10;
@@ -362,7 +373,7 @@ void study(Role *q)
 {
     if(study_time==9)
     {
-        cout<<"You have completed your studies. Try working instead!"<<endl<<endl;
+        cout<<"You've completed your studies. It's time to put them to work!"<<endl<<endl;
     }
     else
     {
@@ -371,41 +382,40 @@ void study(Role *q)
         if(study_time==4)
           assistant();
         attribute(q);
+        if(game_observer) game_observer->statusChanged(*q);
     }
 }
 int work(Role *q)
 {
-    static bool flag=true;
     if(q->age==18)
     {
-        cout<<"You are old enough for university. Study before you start working."
+        cout<<"You'll need to complete your bachelor's degree before you can start working."
             <<endl<<endl;
         return 0;
     }
     else if(q->age>=60)
     {
-        cout<<"You are at least 60 years old. It is time to retire!"<<endl<<endl;
+        cout<<"You've reached retirement age. Time to enjoy a well-earned rest!"<<endl<<endl;
         return 0;
     }
     if(study_time==4)
     {
-        if(flag==true)
+        if(first_work)
         {
-          cout<<"You have become the CEO of a publicly listed company."<<endl
-           <<"With only a bachelor's degree, you must pursue postgraduate studies after this period of work "
-           <<"to continue at the company."<<endl;
-           flag=false;
+          cout<<"You've become the CEO of a publicly listed company!"<<endl
+           <<"To stay in the role, you'll need to begin postgraduate studies after this period of work."<<endl;
+           first_work=false;
         }
         else
         {
-           cout<<"You must complete postgraduate studies now!"<<endl;
+           cout<<"It's time to begin the postgraduate studies you need for your role."<<endl;
            study(q);
            // The staff also age during the five years spent studying.
            *testnum=6;
            company(5);
            if(q->age>=60)
            {
-            cout<<"You are at least 60 years old. It is time to retire!"<<endl<<endl;
+            cout<<"You've reached retirement age. Time to enjoy a well-earned rest!"<<endl<<endl;
             return 0;
            }
         }
@@ -427,15 +437,15 @@ int work(Role *q)
     {
         if(rand()%N<=3)
         {
-        cout<<endl<<"Your excellent work was recognized! After "<<worktime
-            <<" years of work:"<<endl<<"Wealth +"<<worktime*30
+        cout<<endl<<"Your hard work has paid off! After "<<worktime
+            <<(worktime==1 ? " year of work:" : " years of work:")<<endl<<"Wealth +"<<worktime*30
             <<", experience +"<<worktime*15<<endl<<endl;
         q->experience+=worktime*15;
         q->wealth+=worktime*30;
         }
         else
         {
-        cout<<endl<<"After "<<worktime<<" years of work:"<<endl
+        cout<<endl<<"After "<<worktime<<(worktime==1 ? " year of work:" : " years of work:")<<endl
             <<"Wealth +"<<worktime*25
             <<", experience +"<<worktime*12<<endl;
         q->experience+=worktime*12;
@@ -446,8 +456,8 @@ int work(Role *q)
     {
         if(rand()%N<=1)
         {
-        cout<<endl<<"Your excellent work was recognized! After "<<worktime
-            <<" years of work:"<<endl
+        cout<<endl<<"Your hard work has paid off! After "<<worktime
+            <<(worktime==1 ? " year of work:" : " years of work:")<<endl
             <<"Wealth +"<<worktime*30
             <<", experience +"<<worktime*15<<endl<<endl;
         q->experience+=worktime*15;
@@ -455,7 +465,7 @@ int work(Role *q)
         }
         else
         {
-        cout<<endl<<"After "<<worktime<<" years of work:"<<endl
+        cout<<endl<<"After "<<worktime<<(worktime==1 ? " year of work:" : " years of work:")<<endl
             <<"Wealth +"<<worktime*20
             <<", experience +"<<worktime*10<<endl;
         q->experience+=worktime*10;
@@ -466,8 +476,8 @@ int work(Role *q)
     {
         if(rand()%N<=2)
         {
-        cout<<endl<<"Your excellent work was recognized! After "<<worktime
-            <<" years of work:"<<endl
+        cout<<endl<<"Your hard work has paid off! After "<<worktime
+            <<(worktime==1 ? " year of work:" : " years of work:")<<endl
             <<"Wealth +"<<worktime*30
             <<", experience +"<<worktime*20<<endl<<endl;
         q->experience+=worktime*20;
@@ -475,7 +485,7 @@ int work(Role *q)
         }
         else
         {
-        cout<<endl<<"After "<<worktime<<" years of work:"<<endl
+        cout<<endl<<"After "<<worktime<<(worktime==1 ? " year of work:" : " years of work:")<<endl
             <<"Wealth +"<<worktime*20
             <<", experience +"<<worktime*10<<endl;
         q->experience+=worktime*10;
@@ -483,6 +493,7 @@ int work(Role *q)
         }
     }
     q->age+=worktime;
+    if(game_observer) game_observer->statusChanged(*q);
     return 0;
 }
 void ability(Role *q)
@@ -499,20 +510,22 @@ void choose(Role *q)
         case 2:work(q);break;
         case 3:ability(q);break;
         case 4:
+            if(game_observer)
+                game_observer->clearConversation();
+            else {
 #ifdef _WIN32
             system("cls");
 #else
             cout<<"\033[2J\033[H"<<flush;
 #endif
+            }
             break;
     }
 }
 void company(int worktime)
 {
-    // Keep the same staff between work periods.
-    static bool once=true;
-    static List staff;
-    if(once)
+    // Keep the same staff between work periods, and reset them for a new game.
+    if(!staff_initialized)
     {
       staff.size=5;
       staff.list[0]={"LinFeng","Male",25,3,5000};
@@ -520,7 +533,7 @@ void company(int worktime)
       staff.list[2]={"LinJing","Female",28,5,7000};
       staff.list[3]={"JiangWan","Male",36,12,12000};
       staff.list[4]={"LeYun","Female",23,1,4000};
-      once=false;
+      staff_initialized=true;
     }
     ElemType item;
     // Recheck the same position after a removal: later employees shift left.
@@ -529,7 +542,7 @@ void company(int worktime)
         item=GetList(staff,i);
         if(item.age>=60)
         {
-            cout<<item.name<<" is at least 60 years old and has retired."<<endl;
+            cout<<item.name<<" has reached retirement age and left the company."<<endl;
             DeleteList(staff,item,0);
         }
         else
@@ -537,7 +550,7 @@ void company(int worktime)
     }
     if(EmptyList(staff))
     {
-       cout<<"The company has no employees. Please hire someone!"<<endl;
+       cout<<"The company has no employees. Let's hire someone."<<endl;
        *testnum=1;
     }
     switch((int)*testnum)
@@ -546,7 +559,7 @@ void company(int worktime)
                 int available=MaxSize-staff.size;
                 if(available==0)
                 {
-                    cout<<"The staff list is full; cannot hire."<<endl;
+                    cout<<"The staff list is full, so you can't hire anyone else."<<endl;
                     break;
                 }
                 int maxHire=available<5 ? available : 5;
@@ -557,6 +570,7 @@ void company(int worktime)
                     <<"Name  Sex  Age  Monthly salary"<<endl;
                 for(int i=0;i<count;i++)
                 {
+                cout<<"Employee "<<i+1<<" of "<<count<<" (name, sex, age, monthly salary): ";
                 item.name=readToken();
                 item.sex=readToken();
                 item.age=readInteger();
@@ -565,16 +579,16 @@ void company(int worktime)
                 InsertList(staff,item,-1,0);
                 }break; }
         case 2: TraverseList(staff);
-                cerr<<"Enter the name of the employee to dismiss: ";
+                cerr<<"Who would you like to dismiss? Enter their name: ";
                 item.name=readToken();
                 while(!FindList(staff,item))
                 {
-                    cout<<"Employee not found. Try again."<<endl;
+                    cout<<"I couldn't find that employee. Please try again."<<endl;
                     item.name=readToken();
                 }
                 if(item.worktime>=10)
                 {
-                  cout<<item.name<<" has extensive experience. Dismiss this employee?"
+                  cout<<item.name<<" has years of experience. Are you sure you want to dismiss them?"
                       <<endl<<"1. Dismiss"<<endl
                       <<"2. Keep"<<endl;
                   check(2,testnum);
@@ -583,28 +597,27 @@ void company(int worktime)
                 DeleteList(staff,item,0);
                 break;
         case 3: TraverseList(staff);break;
-        case 4: cout<<"Sort by:"<<endl
+        case 4: cout<<"How would you like to sort the staff list?"<<endl
                     <<"1. Age  2. Years of service  3. Monthly salary"<<endl;
                 check(3,testnum);
                 SortList(staff,(int)*testnum);
                 TraverseList(staff);break;
         case 5: TraverseList(staff);
                 int extra;
-                cerr<<"Enter the name of the employee: ";
+                cerr<<"Whose salary would you like to change? Enter their name: ";
                 item.name=readToken();
                 while(!FindList(staff,item))
                 {
-                    cout<<"Employee not found. Try again."<<endl;
+                    cout<<"I couldn't find that employee. Please try again."<<endl;
                     item.name=readToken();
                 }
-                cerr<<"Monthly salary change: ";
+                cerr<<"How much should their monthly salary change? ";
                 extra=readInteger();
-                if(extra<=0)  cout<<"That is not a raise!"<<endl;
                 item.salary+=extra;
                 UpdateList(staff,item);
-                if(extra>0)  cout<<"Salary increased!"<<endl<<item<<endl;
+                if(extra>0)  cout<<"Salary increased."<<endl<<item<<endl;
                 else if(extra==0)  cout<<"The salary is unchanged."<<endl<<item<<endl;
-                else   cout<<"That was a pay cut!"<<endl<<item<<endl;
+                else   cout<<"Salary decreased."<<endl<<item<<endl;
                 break;
         case 6: staff+=worktime;break;
     }
